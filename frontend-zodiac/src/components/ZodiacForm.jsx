@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import axios from "axios";
 import ReactMarkdown from "react-markdown";
 import { getZodiacInfo } from "../utils/zodiacMeta";
@@ -8,7 +8,7 @@ const UI_TEXT = {
   "Tiếng Việt": {
     appTitle: "🔮 Giải Mã Cuộc Đời AI",
     interface: "Giao diện",
-    analyzing: "⏳ AI Đang phân tích dữ liệu... Vui lòng chờ trong giây lát!",
+    analyzing: "AI Đang phân tích dữ liệu... Vui lòng chờ trong giây lát!",
     analyze: "Phân tích",
     copy: "Sao chép",
     share: "Chia sẻ",
@@ -38,7 +38,7 @@ const UI_TEXT = {
     female: "Female",
     birthDate: "Birth date",
     birthTime: "Birth time",
-    noTime: "⏳ Unknown birth time",
+    noTime: "Unknown birth time",
     language: "English",
     name: "Full Name",
     result: "Result",
@@ -58,19 +58,24 @@ const SECTIONS = [
   { "Tiếng Việt": "Gia đình", English: "Family", icon: "🏡" },
   { "Tiếng Việt": "Tâm linh", English: "Spirituality", icon: "🔮" },
   { "Tiếng Việt": "Sứ mệnh cuộc đời", English: "Life Mission", icon: "🌟" },
-  { "Tiếng Việt": "Tiềm năng ẩn giấu", English: "Hidden Potential", icon: "🧬" },
+  {
+    "Tiếng Việt": "Tiềm năng ẩn giấu",
+    English: "Hidden Potential",
+    icon: "🧬",
+  },
   { "Tiếng Việt": "Nhân số học", English: "Numerology", icon: "🔢" },
   { "Tiếng Việt": "Human Design", English: "Human Design", icon: "🌈" },
 ];
 
 export default function ZodiacForm() {
   // Google Fonts (Inter) - inject once
-  React.useEffect(() => {
+  useEffect(() => {
     if (!document.getElementById("inter-font")) {
       const link = document.createElement("link");
       link.id = "inter-font";
       link.rel = "stylesheet";
-      link.href = "https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap";
+      link.href =
+        "https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap";
       document.head.appendChild(link);
       document.body.style.fontFamily = `'Inter', 'sans-serif'`;
     }
@@ -85,11 +90,20 @@ export default function ZodiacForm() {
   });
 
   const [results, setResults] = useState({});
-  const [loading, setLoading] = useState(false);
+  const [loadingSections, setLoadingSections] = useState([]);
+  const [submitting, setSubmitting] = useState(false);
+
   const [activeTab, setActiveTab] = useState(SECTIONS[0]["Tiếng Việt"]);
 
   const lang = formData.language || "Tiếng Việt";
   const T = UI_TEXT[lang];
+
+  // -- Log loadingSections in dev mode for debugging
+  useEffect(() => {
+    if (process.env.NODE_ENV === "development") {
+      console.log("Loading sections:", loadingSections);
+    }
+  }, [loadingSections]);
 
   // -- Input handler
   const handleChange = (e) => {
@@ -100,29 +114,42 @@ export default function ZodiacForm() {
     }
   };
 
-  // -- Submit: send a single POST to backend
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (loading) return;
-    setResults({});
-    setLoading(true);
+    if (submitting) return;
 
-    try {
-      const res = await axios.post(
-        `${import.meta.env.VITE_BACKEND_URL}/zodiac-analysis`,
-        { ...formData }
-      );
-      setResults(res.data);
-    } catch (err) {
-      // If error, fill all tabs with error message
-      const errResults = {};
-      SECTIONS.forEach((section) => {
-        errResults[section[lang]] = `❌ ${T.noInfo}`;
-      });
-      setResults(errResults);
-    } finally {
-      setLoading(false);
-    }
+    setSubmitting(true);
+    setResults({});
+    setLoadingSections(SECTIONS.map((s) => s[lang]));
+
+    SECTIONS.forEach((section) => {
+      axios
+        .post(`${import.meta.env.VITE_BACKEND_URL}/zodiac-analysis`, {
+          ...formData,
+          section: section["Tiếng Việt"],
+        })
+        .then((res) => {
+          setResults((prev) => ({
+            ...prev,
+            [section[lang]]: res.data.analysis,
+          }));
+        })
+        .catch(() => {
+          setResults((prev) => ({
+            ...prev,
+            [section[lang]]: `❌ ${T.noInfo}`,
+          }));
+        })
+        .finally(() => {
+          setLoadingSections((prev) => {
+            const updated = prev.filter((s) => s !== section[lang]);
+            if (updated.length === 0) {
+              setSubmitting(false);
+            }
+            return updated;
+          });
+        });
+    });
   };
 
   // -- Light/Dark Mode toggle
@@ -131,7 +158,7 @@ export default function ZodiacForm() {
   };
 
   // -- Animated background (inject CSS once)
-  React.useEffect(() => {
+  useEffect(() => {
     if (!document.getElementById("bg-ani")) {
       const style = document.createElement("style");
       style.id = "bg-ani";
@@ -174,6 +201,13 @@ export default function ZodiacForm() {
             🌓 {T.interface}
           </button>
         </div>
+
+        {/* Analyzing banner */}
+        {loadingSections.length > 0 && (
+          <div className="mb-4 px-4 py-2 rounded-lg bg-black bg-opacity-40 text-center font-semibold">
+            {T.analyzing}
+          </div>
+        )}
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-3 sm:space-y-4 mt-2">
@@ -256,13 +290,13 @@ export default function ZodiacForm() {
           {/* Submit Button */}
           <button
             type="submit"
-            disabled={loading}
+            disabled={submitting}
             className={`w-full bg-gradient-to-r from-purple-500 via-fuchsia-600 to-purple-700
                        hover:scale-105 active:scale-95 hover:shadow-xl transition-all py-3
                        rounded-2xl font-bold tracking-wide shadow-lg text-lg sm:text-lg text-base
-                       ${loading ? "opacity-60 cursor-wait" : ""}`}
+                       ${submitting ? "opacity-60 cursor-wait" : ""}`}
           >
-            {loading ? T.analyzing : T.analyze}
+            {submitting ? (lang === "Tiếng Việt" ? "AI Đang phân tích..." : "Analyzing...") : T.analyze}
           </button>
         </form>
 
@@ -280,7 +314,8 @@ export default function ZodiacForm() {
                       <div>
                         <p className="font-bold text-lg">{zodiac.name}</p>
                         <p className="text-sm">
-                          {T.element}: {zodiac.element} – {T.planet}: {zodiac.planet}
+                          {T.element}: {zodiac.element} – {T.planet}:{" "}
+                          {zodiac.planet}
                         </p>
                       </div>
                     </div>
@@ -304,6 +339,9 @@ export default function ZodiacForm() {
                 >
                   <span className="mr-1">{section.icon}</span>
                   {section[lang]}
+                  {loadingSections.includes(section[lang]) && (
+                    <span className="ml-1 animate-spin">⏳</span>
+                  )}
                 </button>
               ))}
             </div>
@@ -316,12 +354,10 @@ export default function ZodiacForm() {
                 </span>
                 <h3 className="text-lg font-extrabold ml-2">{activeTab}</h3>
               </div>
-              {loading ? (
+              {loadingSections.includes(activeTab) ? (
                 <p>⏳ {T.analyzing}</p>
               ) : (
-                <ReactMarkdown>
-                  {results[activeTab] || T.noInfo}
-                </ReactMarkdown>
+                <ReactMarkdown>{results[activeTab] || T.noInfo}</ReactMarkdown>
               )}
             </div>
 
